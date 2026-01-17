@@ -22,6 +22,7 @@ from flask_cors import CORS
 from inference.data_types import PropagateDataResponse, PropagateInVideoRequest
 from inference.multipart import MultipartResponseBuilder
 from inference.predictor import InferenceAPI
+from inference.exporter import YOLOExporter
 from strawberry.flask.views import GraphQLView
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ videos = preload_data()
 set_videos(videos)
 
 inference_api = InferenceAPI()
+yolo_exporter = YOLOExporter()
 
 
 @app.route("/healthy")
@@ -71,6 +73,52 @@ def send_uploaded_video(path: str):
         )
     except:
         raise ValueError("resource not found")
+
+
+@app.route("/export_session", methods=["POST"])
+def export_session() -> Response:
+    """Export session tracking results in YOLO format."""
+    data = request.json
+    session_id = data.get("session_id")
+    extract_frames = data.get("extract_frames", False)
+
+    if not session_id:
+        return make_response({"error": "session_id is required"}, 400)
+
+    try:
+        # Get tracking results from inference API
+        tracking_results = inference_api.get_tracking_results(session_id)
+
+        if not tracking_results:
+            return make_response({"error": "No tracking results found for this session"}, 404)
+
+        # Get video path from session
+        session = inference_api.session_states.get(session_id)
+        if not session:
+            return make_response({"error": "Session not found"}, 404)
+
+        video_path = session.get("video_path", "")
+
+        # Create ZIP file in memory
+        zip_buffer = yolo_exporter.create_zip_in_memory(
+            session_id=session_id,
+            video_path=video_path,
+            tracking_results=tracking_results,
+            extract_frames=extract_frames,
+        )
+
+        # Send ZIP file as response
+        return Response(
+            zip_buffer.getvalue(),
+            mimetype="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=session_{session_id}.zip"
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting session: {e}")
+        return make_response({"error": str(e)}, 500)
 
 
 # TOOD: Protect route with ToS permission check

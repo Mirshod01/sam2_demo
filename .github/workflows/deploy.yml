@@ -1,0 +1,46 @@
+name: Deploy to Vast.ai Server
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Vast.ai Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VASTAI_HOST }}
+          username: ${{ secrets.VASTAI_USERNAME }}
+          key: ${{ secrets.VASTAI_SSH_KEY }}
+          port: ${{ secrets.VASTAI_PORT }}
+          script: |
+            # Navigate to project directory
+            cd /workspace/sam2_demo || cd ~/sam2_demo || exit 1
+
+            # Pull latest changes
+            git pull origin main || git pull origin master
+
+            # Install/Update Python dependencies
+            pip install --upgrade opencv-python
+
+            # Restart backend service (if using systemd)
+            # sudo systemctl restart sam2-backend || true
+
+            # Or restart using pm2/supervisor
+            # pm2 restart sam2-backend || true
+
+            # Rebuild frontend if needed
+            cd demo/frontend
+            npm install
+            npm run build
+
+            echo "Deployment completed successfully!"

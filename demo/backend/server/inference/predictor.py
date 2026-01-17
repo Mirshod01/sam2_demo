@@ -47,6 +47,7 @@ class InferenceAPI:
 
         self.session_states: Dict[str, Any] = {}
         self.score_thresh = 0
+        self.tracking_results: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
 
         if MODEL_SIZE == "tiny":
             checkpoint = Path(APP_ROOT) / "checkpoints/sam2.1_hiera_tiny.pt"
@@ -110,7 +111,9 @@ class InferenceAPI:
             self.session_states[session_id] = {
                 "canceled": False,
                 "state": inference_state,
+                "video_path": request.path,
             }
+            self.tracking_results[session_id] = {}
             return StartSessionResponse(session_id=session_id)
 
     def close_session(self, request: CloseSessionRequest) -> CloseSessionResponse:
@@ -318,6 +321,9 @@ class InferenceAPI:
                             object_ids=obj_ids, masks=masks_binary
                         )
 
+                        # Store tracking results for export
+                        self.__store_tracking_result(session_id, frame_idx, rle_mask_list)
+
                         yield PropagateDataResponse(
                             frame_index=frame_idx,
                             results=rle_mask_list,
@@ -342,6 +348,9 @@ class InferenceAPI:
                         rle_mask_list = self.__get_rle_mask_list(
                             object_ids=obj_ids, masks=masks_binary
                         )
+
+                        # Store tracking results for export
+                        self.__store_tracking_result(session_id, frame_idx, rle_mask_list)
 
                         yield PropagateDataResponse(
                             frame_index=frame_idx,
@@ -416,6 +425,7 @@ class InferenceAPI:
 
     def __clear_session_state(self, session_id: str) -> bool:
         session = self.session_states.pop(session_id, None)
+        self.tracking_results.pop(session_id, None)
         if session is None:
             logger.warning(
                 f"cannot close session {session_id} as it does not exist (it might have expired); "
@@ -425,3 +435,25 @@ class InferenceAPI:
         else:
             logger.info(f"removed session {session_id}; {self.__get_session_stats()}")
             return True
+
+    def __store_tracking_result(
+        self, session_id: str, frame_idx: int, rle_mask_list: List[PropagateDataValue]
+    ) -> None:
+        """Store tracking result for export."""
+        if session_id not in self.tracking_results:
+            self.tracking_results[session_id] = {}
+
+        self.tracking_results[session_id][frame_idx] = [
+            {
+                "object_id": result.object_id,
+                "mask": {
+                    "counts": result.mask.counts,
+                    "size": result.mask.size,
+                },
+            }
+            for result in rle_mask_list
+        ]
+
+    def get_tracking_results(self, session_id: str) -> Dict[int, List[Dict[str, Any]]]:
+        """Get all tracking results for a session."""
+        return self.tracking_results.get(session_id, {})

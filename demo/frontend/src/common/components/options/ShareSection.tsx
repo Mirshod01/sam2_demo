@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 import DownloadOption from './DownloadOption';
+import ExportYOLOOption from './ExportYOLOOption';
 
 export default function ShareSection() {
   return (
-    <div className="p-5 md:p-8">
+    <div className="p-5 md:p-8 space-y-4">
       <DownloadOption />
+      <ExportYOLOOption />
     </div>
   );
 }
